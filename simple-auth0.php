@@ -5,8 +5,8 @@
  * Plugin URI: https://github.com/your-username/simple-auth0
  * Description: A WordPress plugin that integrates Auth0 authentication and can optionally replace the native WordPress login flow.
  * Version: 1.0.0
- * Author: Your Name
- * Author URI: https://yourwebsite.com
+ * Author: David Gaitan
+ * Author URI: https://dgaitan.dev
  * License: GPL v2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain: simple-auth0
