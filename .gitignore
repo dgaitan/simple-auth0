@@ -1,0 +1,82 @@
+# Composer dependencies (exclude vendor directory)
+/vendor/
+composer.lock
+
+# WordPress core files (if accidentally included)
+wp-admin/
+wp-includes/
+wp-*.php
+xmlrpc.php
+index.php
+license.txt
+readme.html
+
+# WordPress configuration
+wp-config.php
+wp-config-sample.php
+.htaccess
+
+# WordPress uploads and cache
+wp-content/uploads/
+wp-content/cache/
+wp-content/backup-db/
+wp-content/advanced-cache.php
+wp-content/wp-cache-config.php
+
+# WordPress debug and logs
+wp-content/debug.log
+error_log
+*.log
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Node.js (if using build tools)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build and distribution files
+/build/
+/dist/
+*.zip
+*.tar.gz
+*.rar
+
+# Testing and coverage
+/coverage/
+/tests/coverage/
+.phpunit.result.cache
+phpunit.xml
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Plugin specific ignores
+# Add any plugin-specific files to ignore here
