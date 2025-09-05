@@ -216,14 +216,9 @@ class Simple_Auth0
             ? sanitize_text_field($input['export_hash_algorithm'])
             : '';
 
-        // Status tracking
+        // Status tracking - keep existing values, don't auto-test
         $sanitized['status_last_checked'] = $this->options['status_last_checked'] ?? 0;
         $sanitized['status_ok'] = $this->options['status_ok'] ?? false;
-
-        // Test connection if domain and client_id are provided
-        if (!empty($sanitized['domain']) && !empty($sanitized['client_id'])) {
-            $this->test_connection_on_save($sanitized);
-        }
 
         return $sanitized;
     }
@@ -347,31 +342,6 @@ class Simple_Auth0
         return '';
     }
 
-    /**
-     * Test connection on save
-     *
-     * @param array $options Options to test
-     */
-    private function test_connection_on_save($options)
-    {
-        $result = $this->test_auth0_connection($options);
-
-        if ($result['success']) {
-            add_settings_error(
-                'simple_auth0_options',
-                'connection_success',
-                __('Settings saved and connection test successful!', 'simple-auth0'),
-                'updated'
-            );
-        } else {
-            add_settings_error(
-                'simple_auth0_options',
-                'connection_failed',
-                sprintf(__('Settings saved, but connection test failed: %s', 'simple-auth0'), $result['message']),
-                'error'
-            );
-        }
-    }
 
     /**
      * Enqueue admin scripts and styles
@@ -477,31 +447,27 @@ class Simple_Auth0
      */
     public function ajax_test_connection()
     {
-        // Add debugging
-        error_log('Simple Auth0: AJAX test connection called');
-        
         // Check capabilities first
         if (!current_user_can('manage_options')) {
-            error_log('Simple Auth0: Insufficient permissions');
             wp_send_json_error(['message' => __('Insufficient permissions', 'simple-auth0')]);
         }
 
         // Verify nonce
         $nonce = isset($_POST['nonce']) ? sanitize_text_field($_POST['nonce']) : '';
-        error_log('Simple Auth0: Nonce received: ' . $nonce);
-        
         if (!wp_verify_nonce($nonce, 'simple_auth0_admin_nonce')) {
-            error_log('Simple Auth0: Nonce verification failed');
             wp_send_json_error(['message' => __('Security check failed. Please refresh the page and try again.', 'simple-auth0')]);
         }
 
         // Get current options
         $options = get_option('simple_auth0_options', []);
-        error_log('Simple Auth0: Options loaded: ' . print_r($options, true));
         
         // Test connection
         $result = $this->test_auth0_connection($options);
-        error_log('Simple Auth0: Connection test result: ' . print_r($result, true));
+        
+        // Update status in database
+        $options['status_last_checked'] = time();
+        $options['status_ok'] = $result['success'];
+        update_option('simple_auth0_options', $options);
         
         if ($result['success']) {
             wp_send_json_success(['message' => $result['message']]);
@@ -531,9 +497,6 @@ class Simple_Auth0
         // Test connection by fetching well-known configuration
         $well_known_url = 'https://' . $options['domain'] . '/.well-known/openid-configuration';
 
-        // Add some debugging information
-        error_log('Simple Auth0: Testing connection to: ' . $well_known_url);
-
         $response = wp_remote_get($well_known_url, [
             'timeout' => 10,
             'headers' => [
@@ -544,7 +507,7 @@ class Simple_Auth0
 
         if (is_wp_error($response)) {
             $error_message = $response->get_error_message();
-            error_log('Simple Auth0: WP_Error: ' . $error_message);
+            error_log('Simple Auth0: Connection test failed - ' . $error_message);
 
             if (strpos($error_message, 'SSL') !== false) {
                 return ['success' => false, 'message' => __('SSL connection error. Please check your server\'s SSL configuration.', 'simple-auth0')];
@@ -556,11 +519,9 @@ class Simple_Auth0
         }
 
         $response_code = wp_remote_retrieve_response_code($response);
-        error_log('Simple Auth0: Response code: ' . $response_code);
 
         if ($response_code !== 200) {
-            $response_body = wp_remote_retrieve_body($response);
-            error_log('Simple Auth0: Response body: ' . $response_body);
+            error_log('Simple Auth0: Connection test failed - HTTP ' . $response_code . ' for ' . $options['domain']);
 
             switch ($response_code) {
                 case 404:
