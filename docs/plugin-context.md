@@ -42,6 +42,11 @@ When enabled, the plugin redirects the WordPress login to Auth0's `/authorize` e
 - Postman/Insomnia for callback testing.
 - Browser devtools for cookie/header inspection.
 
+### Code Practices and Considerations
+
+- Please follow WordPress standards
+- Use Classes and Namespaces
+
 ## 3) Architecture (High Level)
 
 - **Admin UI** (Settings → Simple Auth0): React-free classic WP admin pages with tabs.

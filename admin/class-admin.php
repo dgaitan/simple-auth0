@@ -1,5 +1,4 @@
 <?php
-
 /**
  * Admin functionality
  *
@@ -16,24 +15,71 @@ if (!defined('ABSPATH')) {
 /**
  * Admin class
  */
-class Admin
-{
+class Admin {
+
+    /**
+     * Current tab
+     *
+     * @var string
+     */
+    private $current_tab = 'settings';
+
+    /**
+     * Available tabs
+     *
+     * @var array
+     */
+    private $tabs = [];
+
+    /**
+     * Plugin instance
+     *
+     * @var Simple_Auth0
+     */
+    private $plugin;
 
     /**
      * Constructor
      */
-    public function __construct()
-    {
+    public function __construct() {
+        $this->plugin = Simple_Auth0::get_instance();
+        $this->init_tabs();
         add_action('admin_menu', [$this, 'add_admin_menu']);
         add_action('admin_init', [$this, 'admin_init']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_scripts']);
+        add_action('wp_ajax_simple_auth0_check_connection', [$this, 'ajax_check_connection']);
+        add_action('wp_ajax_simple_auth0_export_users', [$this, 'ajax_export_users']);
+    }
+
+    /**
+     * Initialize tabs
+     */
+    private function init_tabs() {
+        $this->tabs = [
+            'settings' => [
+                'title' => __('Settings', 'simple-auth0'),
+                'callback' => [$this, 'render_settings_tab'],
+            ],
+            'sync' => [
+                'title' => __('Sync', 'simple-auth0'),
+                'callback' => [$this, 'render_sync_tab'],
+            ],
+            'help' => [
+                'title' => __('Help', 'simple-auth0'),
+                'callback' => [$this, 'render_help_tab'],
+            ],
+        ];
+
+        // Get current tab from URL parameter
+        if (isset($_GET['tab']) && array_key_exists($_GET['tab'], $this->tabs)) {
+            $this->current_tab = sanitize_text_field($_GET['tab']);
+        }
     }
 
     /**
      * Add admin menu
      */
-    public function add_admin_menu()
-    {
+    public function add_admin_menu() {
         add_options_page(
             __('Simple Auth0', 'simple-auth0'),
             __('Simple Auth0', 'simple-auth0'),
@@ -46,8 +92,7 @@ class Admin
     /**
      * Initialize admin settings
      */
-    public function admin_init()
-    {
+    public function admin_init() {
         // Register settings
         register_setting('simple_auth0_options', 'simple_auth0_options', [
             'sanitize_callback' => [$this, 'sanitize_options']
@@ -68,8 +113,7 @@ class Admin
     /**
      * Add settings fields
      */
-    private function add_settings_fields()
-    {
+    private function add_settings_fields() {
         $fields = [
             'domain' => [
                 'label' => __('Auth0 Domain', 'simple-auth0'),
@@ -145,8 +189,7 @@ class Admin
     /**
      * Settings section callback
      */
-    public function settings_section_callback()
-    {
+    public function settings_section_callback() {
         echo '<p>' . esc_html__('Configure your Auth0 application settings below.', 'simple-auth0') . '</p>';
     }
 
@@ -155,8 +198,7 @@ class Admin
      *
      * @param array $args Field arguments.
      */
-    public function field_callback($args)
-    {
+    public function field_callback($args) {
         $field_id = $args['field_id'];
         $field_config = $args['field_config'];
         $options = get_option('simple_auth0_options', []);
@@ -219,20 +261,19 @@ class Admin
      * @param array $input Raw input options.
      * @return array Sanitized options.
      */
-    public function sanitize_options($input)
-    {
+    public function sanitize_options($input) {
         $sanitized = [];
-
+        
         // Sanitize domain
         if (isset($input['domain'])) {
             $sanitized['domain'] = sanitize_text_field($input['domain']);
         }
-
+        
         // Sanitize client_id
         if (isset($input['client_id'])) {
             $sanitized['client_id'] = sanitize_text_field($input['client_id']);
         }
-
+        
         // Sanitize client_secret (only update if not empty)
         if (isset($input['client_secret']) && !empty($input['client_secret'])) {
             $sanitized['client_secret'] = sanitize_text_field($input['client_secret']);
@@ -241,31 +282,31 @@ class Admin
             $existing_options = get_option('simple_auth0_options', []);
             $sanitized['client_secret'] = isset($existing_options['client_secret']) ? $existing_options['client_secret'] : '';
         }
-
+        
         // Sanitize audience
         if (isset($input['audience'])) {
             $sanitized['audience'] = sanitize_text_field($input['audience']);
         }
-
+        
         // Sanitize redirect_uri
         if (isset($input['redirect_uri'])) {
             $sanitized['redirect_uri'] = esc_url_raw($input['redirect_uri']);
         }
-
+        
         // Sanitize logout_redirect_uri
         if (isset($input['logout_redirect_uri'])) {
             $sanitized['logout_redirect_uri'] = esc_url_raw($input['logout_redirect_uri']);
         }
-
+        
         // Sanitize scopes
         if (isset($input['scopes'])) {
             $sanitized['scopes'] = sanitize_text_field($input['scopes']);
         }
-
+        
         // Sanitize boolean options
         $sanitized['enable_auth0_login'] = isset($input['enable_auth0_login']) ? (bool) $input['enable_auth0_login'] : false;
         $sanitized['auto_sync_users'] = isset($input['auto_sync_users']) ? (bool) $input['auto_sync_users'] : true;
-
+        
         return $sanitized;
     }
 
@@ -274,8 +315,7 @@ class Admin
      *
      * @param string $hook Current admin page hook.
      */
-    public function enqueue_admin_scripts($hook)
-    {
+    public function enqueue_admin_scripts($hook) {
         if ('settings_page_simple-auth0' !== $hook) {
             return;
         }
@@ -287,36 +327,380 @@ class Admin
             [],
             SIMPLE_AUTH0_VERSION
         );
+        wp_enqueue_script(
+            'simple-auth0-admin',
+            SIMPLE_AUTH0_PLUGIN_URL . 'admin/js/admin.js',
+            ['jquery'],
+            SIMPLE_AUTH0_VERSION,
+            true
+        );
+
+        // Localize script for AJAX
+        wp_localize_script('simple-auth0-admin', 'simpleAuth0', [
+            'ajaxUrl' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce('simple_auth0_nonce'),
+            'strings' => [
+                'checking' => __('Checking connection...', 'simple-auth0'),
+                'connected' => __('Connected', 'simple-auth0'),
+                'notConnected' => __('Not connected', 'simple-auth0'),
+                'error' => __('Error', 'simple-auth0'),
+            ],
+        ]);
     }
 
     /**
      * Admin page callback
      */
-    public function admin_page()
-    {
-?>
+    public function admin_page() {
+        ?>
         <div class="wrap">
-            <h1><?php echo esc_html__('Simple Auth0 Settings', 'simple-auth0'); ?></h1>
-
+            <h1><?php echo esc_html__('Simple Auth0', 'simple-auth0'); ?></h1>
+            
             <?php settings_errors(); ?>
-
+            
             <div class="simple-auth0-admin">
+                <!-- Connection Status -->
                 <div class="simple-auth0-status">
                     <h2><?php echo esc_html__('Connection Status', 'simple-auth0'); ?></h2>
                     <div class="status-badge">
-                        <span class="status-indicator status-unknown"><?php echo esc_html__('Checking...', 'simple-auth0'); ?></span>
+                        <span class="status-indicator status-unknown" id="connection-status">
+                            <?php echo esc_html__('Checking...', 'simple-auth0'); ?>
+                        </span>
+                        <button type="button" class="button button-secondary" id="check-connection">
+                            <?php echo esc_html__('Re-check', 'simple-auth0'); ?>
+                        </button>
                     </div>
                 </div>
 
-                <form method="post" action="options.php">
+                <!-- Tabs -->
+                <div class="simple-auth0-tabs">
+                    <nav class="nav-tab-wrapper">
+                        <?php foreach ($this->tabs as $tab_id => $tab_config) : ?>
+                            <a href="<?php echo esc_url($this->get_tab_url($tab_id)); ?>" 
+                               class="nav-tab <?php echo $tab_id === $this->current_tab ? 'nav-tab-active' : ''; ?>">
+                                <?php echo esc_html($tab_config['title']); ?>
+                            </a>
+                        <?php endforeach; ?>
+                    </nav>
+                </div>
+
+                <!-- Tab Content -->
+                <div class="simple-auth0-tab-content">
                     <?php
-                    settings_fields('simple_auth0_options');
-                    do_settings_sections('simple-auth0');
-                    submit_button();
+                    if (isset($this->tabs[$this->current_tab]['callback'])) {
+                        call_user_func($this->tabs[$this->current_tab]['callback']);
+                    }
                     ?>
-                </form>
+                </div>
             </div>
         </div>
-<?php
+        <?php
+    }
+
+    /**
+     * Get tab URL
+     *
+     * @param string $tab_id Tab ID.
+     * @return string Tab URL.
+     */
+    private function get_tab_url($tab_id) {
+        return add_query_arg('tab', $tab_id, admin_url('options-general.php?page=simple-auth0'));
+    }
+
+    /**
+     * Render Settings tab
+     */
+    public function render_settings_tab() {
+        ?>
+        <form method="post" action="options.php">
+            <?php
+            settings_fields('simple_auth0_options');
+            do_settings_sections('simple-auth0');
+            submit_button();
+            ?>
+        </form>
+        <?php
+    }
+
+    /**
+     * Render Sync tab
+     */
+    public function render_sync_tab() {
+        $user_count = count_users();
+        $total_users = $user_count['total_users'];
+        ?>
+        <div class="sync-tab">
+            <h2><?php echo esc_html__('User Synchronization', 'simple-auth0'); ?></h2>
+            
+            <div class="sync-info">
+                <p><?php 
+                    printf(
+                        esc_html__('You have %d users in your WordPress site.', 'simple-auth0'),
+                        $total_users
+                    );
+                ?></p>
+            </div>
+
+            <div class="sync-actions">
+                <button type="button" class="button button-secondary" id="preview-export">
+                    <?php echo esc_html__('Preview Export', 'simple-auth0'); ?>
+                </button>
+                <button type="button" class="button button-primary" id="download-export">
+                    <?php echo esc_html__('Download JSON', 'simple-auth0'); ?>
+                </button>
+            </div>
+
+            <div class="sync-preview" id="sync-preview" style="display: none;">
+                <h3><?php echo esc_html__('Export Preview', 'simple-auth0'); ?></h3>
+                <pre id="preview-content"></pre>
+            </div>
+
+            <div class="sync-instructions">
+                <h3><?php echo esc_html__('Import Instructions', 'simple-auth0'); ?></h3>
+                <ol>
+                    <li><?php echo esc_html__('Go to your Auth0 Dashboard', 'simple-auth0'); ?></li>
+                    <li><?php echo esc_html__('Navigate to User Management → Users', 'simple-auth0'); ?></li>
+                    <li><?php echo esc_html__('Click "Import Users"', 'simple-auth0'); ?></li>
+                    <li><?php echo esc_html__('Upload the downloaded JSON file', 'simple-auth0'); ?></li>
+                    <li><?php echo esc_html__('Select the database connection to import into', 'simple-auth0'); ?></li>
+                </ol>
+                
+                <div class="warning">
+                    <strong><?php echo esc_html__('Note:', 'simple-auth0'); ?></strong>
+                    <?php echo esc_html__('Password import only works with supported hash algorithms (bcrypt, argon2id). Legacy WordPress hashes may not be importable.', 'simple-auth0'); ?>
+                </div>
+            </div>
+        </div>
+        <?php
+    }
+
+    /**
+     * Render Help tab
+     */
+    public function render_help_tab() {
+        ?>
+        <div class="help-tab">
+            <h2><?php echo esc_html__('Setup Guide', 'simple-auth0'); ?></h2>
+            
+            <div class="help-section">
+                <h3><?php echo esc_html__('Auth0 Application Configuration', 'simple-auth0'); ?></h3>
+                <p><?php echo esc_html__('Configure your Auth0 application with the following settings:', 'simple-auth0'); ?></p>
+                
+                <ul>
+                    <li><strong><?php echo esc_html__('Allowed Callback URLs:', 'simple-auth0'); ?></strong>
+                        <code><?php echo esc_url(home_url('/wp-json/simple-auth0/v1/callback')); ?></code>
+                    </li>
+                    <li><strong><?php echo esc_html__('Allowed Logout URLs:', 'simple-auth0'); ?></strong>
+                        <code><?php echo esc_url(home_url('/wp-login.php')); ?></code>,
+                        <code><?php echo esc_url(home_url('/')); ?></code>
+                    </li>
+                    <li><strong><?php echo esc_html__('Allowed Web Origins:', 'simple-auth0'); ?></strong>
+                        <code><?php echo esc_url(home_url()); ?></code>
+                    </li>
+                    <li><strong><?php echo esc_html__('Application Type:', 'simple-auth0'); ?></strong> <?php echo esc_html__('Regular Web Application', 'simple-auth0'); ?></li>
+                    <li><strong><?php echo esc_html__('Token Endpoint Auth Method:', 'simple-auth0'); ?></strong> <?php echo esc_html__('client_secret_post', 'simple-auth0'); ?></li>
+                </ul>
+            </div>
+
+            <div class="help-section">
+                <h3><?php echo esc_html__('Enabling Auth0 Login', 'simple-auth0'); ?></h3>
+                <ol>
+                    <li><?php echo esc_html__('Configure your Auth0 settings in the Settings tab', 'simple-auth0'); ?></li>
+                    <li><?php echo esc_html__('Test the connection using the "Re-check" button', 'simple-auth0'); ?></li>
+                    <li><?php echo esc_html__('Enable "Auth0 Login" toggle when connection is successful', 'simple-auth0'); ?></li>
+                    <li><?php echo esc_html__('Save settings to activate Auth0 login', 'simple-auth0'); ?></li>
+                </ol>
+            </div>
+
+            <div class="help-section">
+                <h3><?php echo esc_html__('Troubleshooting', 'simple-auth0'); ?></h3>
+                <ul>
+                    <li><strong><?php echo esc_html__('Connection Issues:', 'simple-auth0'); ?></strong> <?php echo esc_html__('Verify your domain, client ID, and client secret are correct', 'simple-auth0'); ?></li>
+                    <li><strong><?php echo esc_html__('Callback Errors:', 'simple-auth0'); ?></strong> <?php echo esc_html__('Ensure the callback URL is added to your Auth0 application settings', 'simple-auth0'); ?></li>
+                    <li><strong><?php echo esc_html__('Cookie Issues:', 'simple-auth0'); ?></strong> <?php echo esc_html__('Check that your site uses HTTPS and cookies are enabled', 'simple-auth0'); ?></li>
+                    <li><strong><?php echo esc_html__('Clock Skew:', 'simple-auth0'); ?></strong> <?php echo esc_html__('Ensure your server time is synchronized', 'simple-auth0'); ?></li>
+                </ul>
+            </div>
+
+            <div class="help-section">
+                <h3><?php echo esc_html__('Support', 'simple-auth0'); ?></h3>
+                <p>
+                    <?php echo esc_html__('For additional help, please visit:', 'simple-auth0'); ?>
+                    <a href="https://github.com/your-username/simple-auth0" target="_blank">
+                        <?php echo esc_html__('GitHub Repository', 'simple-auth0'); ?>
+                    </a>
+                </p>
+            </div>
+        </div>
+        <?php
+    }
+
+    /**
+     * AJAX handler for connection check
+     */
+    public function ajax_check_connection() {
+        check_ajax_referer('simple_auth0_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_die(__('Insufficient permissions', 'simple-auth0'));
+        }
+
+        $options = $this->plugin->get_options();
+        
+        if (empty($options['domain']) || empty($options['client_id'])) {
+            wp_send_json_error([
+                'message' => __('Auth0 configuration incomplete', 'simple-auth0')
+            ]);
+        }
+
+        // Simple connection test - try to fetch OIDC discovery document
+        $discovery_url = 'https://' . $options['domain'] . '/.well-known/openid_configuration';
+        
+        $response = wp_remote_get($discovery_url, [
+            'timeout' => 10,
+            'sslverify' => true,
+        ]);
+
+        if (is_wp_error($response)) {
+            wp_send_json_error([
+                'message' => $response->get_error_message()
+            ]);
+        }
+
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+
+        if (empty($data) || !isset($data['issuer'])) {
+            wp_send_json_error([
+                'message' => __('Invalid Auth0 domain or configuration', 'simple-auth0')
+            ]);
+        }
+
+        wp_send_json_success([
+            'message' => __('Connected successfully', 'simple-auth0')
+        ]);
+    }
+
+    /**
+     * AJAX handler for user export
+     */
+    public function ajax_export_users() {
+        check_ajax_referer('simple_auth0_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_die(__('Insufficient permissions', 'simple-auth0'));
+        }
+
+        $action = sanitize_text_field($_POST['action_type'] ?? '');
+        
+        if ($action === 'preview') {
+            $this->export_users_preview();
+        } elseif ($action === 'download') {
+            $this->export_users_download();
+        } else {
+            wp_send_json_error(['message' => __('Invalid action', 'simple-auth0')]);
+        }
+    }
+
+    /**
+     * Export users preview
+     */
+    private function export_users_preview() {
+        $users = get_users(['number' => 20]); // Preview first 20 users
+        $export_data = $this->prepare_export_data($users);
+        
+        wp_send_json_success([
+            'preview' => json_encode($export_data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        ]);
+    }
+
+    /**
+     * Export users download
+     */
+    private function export_users_download() {
+        $users = get_users();
+        $export_data = $this->prepare_export_data($users);
+        
+        $filename = 'auth0-users-export-' . date('Y-m-d-H-i-s') . '.json';
+        
+        header('Content-Type: application/json');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Content-Length: ' . strlen(json_encode($export_data)));
+        
+        echo json_encode($export_data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+
+    /**
+     * Prepare export data in Auth0 format
+     *
+     * @param array $users WordPress users.
+     * @return array Export data.
+     */
+    private function prepare_export_data($users) {
+        $export_data = [];
+        
+        foreach ($users as $user) {
+            $user_data = [
+                'email' => $user->user_email,
+                'email_verified' => true, // Best effort
+                'user_id' => 'wp|' . $user->ID,
+                'name' => $user->display_name,
+                'given_name' => $user->first_name,
+                'family_name' => $user->last_name,
+            ];
+
+            // Add password hash if supported
+            $password_hash = $this->get_user_password_hash($user);
+            if ($password_hash) {
+                $user_data['custom_password_hash'] = $password_hash;
+            } else {
+                $user_data['password_import_unavailable'] = true;
+            }
+
+            $export_data[] = $user_data;
+        }
+        
+        return $export_data;
+    }
+
+    /**
+     * Get user password hash in Auth0 format
+     *
+     * @param \WP_User $user WordPress user.
+     * @return array|null Password hash data or null if unsupported.
+     */
+    private function get_user_password_hash($user) {
+        global $wp_hasher;
+        
+        if (!$wp_hasher) {
+            require_once ABSPATH . WPINC . '/class-phpass.php';
+            $wp_hasher = new \PasswordHash(8, true);
+        }
+
+        // Get the stored hash
+        $stored_hash = $user->user_pass;
+        
+        // Try to detect hash algorithm
+        if (strpos($stored_hash, '$2y$') === 0) {
+            // bcrypt
+            return [
+                'algorithm' => 'bcrypt',
+                'hash' => [
+                    'value' => $stored_hash,
+                ],
+            ];
+        } elseif (strpos($stored_hash, '$argon2id$') === 0) {
+            // argon2id
+            return [
+                'algorithm' => 'argon2id',
+                'hash' => [
+                    'value' => $stored_hash,
+                ],
+            ];
+        }
+        
+        // Unsupported hash format
+        return null;
     }
 }
