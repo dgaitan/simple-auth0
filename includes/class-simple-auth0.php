@@ -460,15 +460,15 @@ class Simple_Auth0
 
         // Get current options
         $options = get_option('simple_auth0_options', []);
-        
+
         // Test connection
         $result = $this->test_auth0_connection($options);
-        
+
         // Update status in database
         $options['status_last_checked'] = time();
         $options['status_ok'] = $result['success'];
         update_option('simple_auth0_options', $options);
-        
+
         if ($result['success']) {
             wp_send_json_success(['message' => $result['message']]);
         } else {
