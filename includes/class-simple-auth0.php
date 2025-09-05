@@ -62,7 +62,13 @@ class Simple_Auth0
             add_action('admin_menu', [$this, 'add_admin_menu']);
             add_action('admin_init', [$this, 'admin_init']);
             add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_scripts']);
+            add_action('wp_ajax_simple_auth0_test_connection', [$this, 'ajax_test_connection']);
         }
+
+        // Auth0 login hooks
+        add_action('login_init', [$this, 'maybe_redirect_to_auth0']);
+        add_action('wp_logout', [$this, 'handle_logout']);
+        add_filter('login_url', [$this, 'filter_login_url'], 10, 2);
     }
 
     /**
@@ -621,5 +627,169 @@ class Simple_Auth0
         }
 
         return $export_data;
+    }
+
+    /**
+     * Maybe redirect to Auth0 on login_init
+     */
+    public function maybe_redirect_to_auth0()
+    {
+        // Only redirect if Auth0 login is enabled
+        if (empty($this->options['enable_auth0_login']) || !$this->options['enable_auth0_login']) {
+            return;
+        }
+
+        // Check if we have required settings
+        if (empty($this->options['domain']) || empty($this->options['client_id'])) {
+            return;
+        }
+
+        // Don't redirect if we're already in an Auth0 flow
+        if (isset($_GET['auth0']) || isset($_GET['code']) || isset($_GET['state'])) {
+            return;
+        }
+
+        // Don't redirect AJAX requests
+        if (wp_doing_ajax()) {
+            return;
+        }
+
+        // Don't redirect if user is already logged in
+        if (is_user_logged_in()) {
+            return;
+        }
+
+        // Generate Auth0 authorization URL and redirect
+        $auth_url = $this->generate_auth0_authorization_url();
+        if ($auth_url) {
+            wp_redirect($auth_url);
+            exit;
+        }
+    }
+
+    /**
+     * Generate Auth0 authorization URL with PKCE
+     */
+    private function generate_auth0_authorization_url()
+    {
+        if (empty($this->options['domain']) || empty($this->options['client_id'])) {
+            return false;
+        }
+
+        // Generate PKCE parameters
+        $code_verifier = $this->generate_code_verifier();
+        $code_challenge = $this->generate_code_challenge($code_verifier);
+
+        // Store code verifier in transient for later use
+        set_transient('auth0_code_verifier_' . wp_get_session_token(), $code_verifier, 600); // 10 minutes
+
+        // Generate state parameter for security
+        $state = wp_generate_password(32, false);
+        set_transient('auth0_state_' . wp_get_session_token(), $state, 600); // 10 minutes
+
+        // Build authorization URL
+        $params = [
+            'response_type' => 'code',
+            'client_id' => $this->options['client_id'],
+            'redirect_uri' => $this->get_redirect_uri(),
+            'scope' => $this->options['scopes'] ?? 'openid profile email',
+            'state' => $state,
+            'code_challenge' => $code_challenge,
+            'code_challenge_method' => 'S256'
+        ];
+
+        // Add audience if configured
+        if (!empty($this->options['audience'])) {
+            $params['audience'] = $this->options['audience'];
+        }
+
+        $auth_url = 'https://' . $this->options['domain'] . '/authorize?' . http_build_query($params);
+
+        return $auth_url;
+    }
+
+    /**
+     * Generate PKCE code verifier
+     */
+    private function generate_code_verifier()
+    {
+        return rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+    }
+
+    /**
+     * Generate PKCE code challenge
+     */
+    private function generate_code_challenge($code_verifier)
+    {
+        return rtrim(strtr(base64_encode(hash('sha256', $code_verifier, true)), '+/', '-_'), '=');
+    }
+
+    /**
+     * Get redirect URI for Auth0
+     */
+    private function get_redirect_uri()
+    {
+        if (!empty($this->options['redirect_uri'])) {
+            return $this->options['redirect_uri'];
+        }
+
+        // Default to our REST API callback
+        return home_url('/wp-json/simple-auth0/v1/callback');
+    }
+
+    /**
+     * Filter login URL to use Auth0 when enabled
+     */
+    public function filter_login_url($login_url, $redirect)
+    {
+        // Only filter if Auth0 login is enabled
+        if (empty($this->options['enable_auth0_login']) || !$this->options['enable_auth0_login']) {
+            return $login_url;
+        }
+
+        // Check if we have required settings
+        if (empty($this->options['domain']) || empty($this->options['client_id'])) {
+            return $login_url;
+        }
+
+        // Don't filter if user is already logged in
+        if (is_user_logged_in()) {
+            return $login_url;
+        }
+
+        // Return the standard login URL - the login_init hook will handle the redirect
+        return $login_url;
+    }
+
+    /**
+     * Handle logout
+     */
+    public function handle_logout()
+    {
+        // Only handle Auth0 logout if enabled and configured
+        if (empty($this->options['enable_auth0_login']) || !$this->options['enable_auth0_login']) {
+            return;
+        }
+
+        if (empty($this->options['domain'])) {
+            return;
+        }
+
+        // Get logout redirect URI
+        $logout_redirect = !empty($this->options['logout_redirect_uri']) 
+            ? $this->options['logout_redirect_uri'] 
+            : home_url();
+
+        // Build Auth0 logout URL
+        $logout_params = [
+            'returnTo' => $logout_redirect,
+            'client_id' => $this->options['client_id']
+        ];
+
+        $auth0_logout_url = 'https://' . $this->options['domain'] . '/v2/logout?' . http_build_query($logout_params);
+
+        // Redirect to Auth0 logout
+        wp_redirect($auth0_logout_url);
+        exit;
     }
 }
