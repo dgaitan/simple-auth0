@@ -80,6 +80,9 @@ class Simple_Auth0
         if ($this->is_auth0_login_enabled()) {
             $this->init_auth_hooks();
         }
+        
+        // Hook to reinitialize auth hooks when options are updated
+        add_action('update_option_simple_auth0_options', [$this, 'maybe_reinit_auth_hooks'], 10, 2);
     }
 
     /**
@@ -164,6 +167,11 @@ class Simple_Auth0
         // Load REST API classes
         require_once SIMPLE_AUTH0_PLUGIN_DIR . 'rest-api/class-oauth-handler.php';
         new OAuth_Handler();
+        
+        // Load WP-CLI commands
+        if (defined('WP_CLI') && WP_CLI) {
+            require_once SIMPLE_AUTH0_PLUGIN_DIR . 'includes/class-wp-cli-commands.php';
+        }
     }
 
     /**
@@ -174,6 +182,34 @@ class Simple_Auth0
     public function is_auth0_login_enabled()
     {
         return !empty($this->options['enable_auth0_login']);
+    }
+
+    /**
+     * Maybe reinitialize auth hooks when options are updated
+     *
+     * @param array $old_value Old option value.
+     * @param array $new_value New option value.
+     */
+    public function maybe_reinit_auth_hooks($old_value, $new_value)
+    {
+        $old_enabled = !empty($old_value['enable_auth0_login']);
+        $new_enabled = !empty($new_value['enable_auth0_login']);
+        
+        // If the enabled state changed, we need to reinitialize hooks
+        if ($old_enabled !== $new_enabled) {
+            // Remove existing auth hooks
+            remove_action('login_init', [$this, 'redirect_to_auth0']);
+            remove_filter('authenticate', [$this, 'authenticate_user'], 20);
+            remove_filter('login_url', [$this, 'modify_login_url'], 10);
+            
+            // Reload options
+            $this->load_options();
+            
+            // Reinitialize auth hooks if enabled
+            if ($new_enabled) {
+                $this->init_auth_hooks();
+            }
+        }
     }
 
     /**
@@ -287,6 +323,11 @@ class Simple_Auth0
      */
     public function redirect_to_auth0()
     {
+        // Safety check: ensure Auth0 login is still enabled
+        if (!$this->is_auth0_login_enabled()) {
+            return;
+        }
+        
         // This will be implemented in the OAuth handler
     }
 
@@ -300,6 +341,11 @@ class Simple_Auth0
      */
     public function authenticate_user($user, $username, $password)
     {
+        // Safety check: ensure Auth0 login is still enabled
+        if (!$this->is_auth0_login_enabled()) {
+            return $user;
+        }
+        
         // This will be implemented in the OAuth handler
         return $user;
     }
@@ -313,6 +359,11 @@ class Simple_Auth0
      */
     public function modify_login_url($login_url, $redirect)
     {
+        // Safety check: ensure Auth0 login is still enabled
+        if (!$this->is_auth0_login_enabled()) {
+            return $login_url;
+        }
+        
         // This will be implemented in the OAuth handler
         return $login_url;
     }

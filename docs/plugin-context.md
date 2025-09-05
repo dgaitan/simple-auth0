@@ -46,6 +46,7 @@ When enabled, the plugin redirects the WordPress login to Auth0's `/authorize` e
 
 - Please follow WordPress standards
 - Use Classes and Namespaces
+- Use DRY principles (Do Not Repeat Yourself)
 
 ## 3) Architecture (High Level)
 

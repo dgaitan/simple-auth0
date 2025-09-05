@@ -80,7 +80,7 @@ add_action('plugins_loaded', 'simple_auth0_init');
  * Plugin activation hook
  */
 register_activation_hook(__FILE__, function () {
-    // Set default options
+    // Set default options - ensure Auth0 login is disabled by default
     $default_options = [
         'domain' => '',
         'client_id' => '',
@@ -89,22 +89,43 @@ register_activation_hook(__FILE__, function () {
         'redirect_uri' => home_url('/wp-json/simple-auth0/v1/callback'),
         'logout_redirect_uri' => '',
         'scopes' => 'openid profile email',
-        'enable_auth0_login' => false,
+        'enable_auth0_login' => false, // CRITICAL: Must be false by default
         'auto_sync_users' => true,
         'export_hash_algorithm' => '',
         'status_last_checked' => 0,
         'status_ok' => false,
     ];
 
-    add_option('simple_auth0_options', $default_options, '', 'no');
+    // Only add options if they don't exist (preserve existing settings on reactivation)
+    if (!get_option('simple_auth0_options')) {
+        add_option('simple_auth0_options', $default_options, '', 'no');
+    } else {
+        // Ensure enable_auth0_login is false on reactivation (safety measure)
+        $existing_options = get_option('simple_auth0_options', []);
+        $existing_options['enable_auth0_login'] = false;
+        update_option('simple_auth0_options', $existing_options);
+    }
+
+    // Flush rewrite rules to ensure REST API routes are registered
+    flush_rewrite_rules();
 });
 
 /**
  * Plugin deactivation hook
  */
 register_deactivation_hook(__FILE__, function () {
-    // Clean up any temporary data if needed
+    // Ensure Auth0 login is disabled on deactivation (safety measure)
+    $options = get_option('simple_auth0_options', []);
+    if (!empty($options['enable_auth0_login'])) {
+        $options['enable_auth0_login'] = false;
+        update_option('simple_auth0_options', $options);
+    }
+    
+    // Flush rewrite rules to clean up REST API routes
+    flush_rewrite_rules();
+    
     // Note: We don't remove options on deactivation to preserve settings
+    // This ensures users can reactivate without losing their configuration
 });
 
 /**
