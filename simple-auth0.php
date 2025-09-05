@@ -120,10 +120,10 @@ register_deactivation_hook(__FILE__, function () {
         $options['enable_auth0_login'] = false;
         update_option('simple_auth0_options', $options);
     }
-    
+
     // Flush rewrite rules to clean up REST API routes
     flush_rewrite_rules();
-    
+
     // Note: We don't remove options on deactivation to preserve settings
     // This ensures users can reactivate without losing their configuration
 });
@@ -131,7 +131,13 @@ register_deactivation_hook(__FILE__, function () {
 /**
  * Plugin uninstall hook
  */
-register_uninstall_hook(__FILE__, function () {
+register_uninstall_hook(__FILE__, 'simple_auth0_uninstall');
+
+/**
+ * Plugin uninstall function
+ */
+function simple_auth0_uninstall() {
     // Remove plugin options if user chooses to do so
     // This will be handled by the admin interface
-});
+    // For now, we'll leave options intact to preserve user data
+}
