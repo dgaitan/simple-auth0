@@ -80,9 +80,6 @@ class Simple_Auth0
         if ($this->is_auth0_login_enabled()) {
             $this->init_auth_hooks();
         }
-        
-        // Hook to reinitialize auth hooks when options are updated
-        add_action('update_option_simple_auth0_options', [$this, 'maybe_reinit_auth_hooks'], 10, 2);
     }
 
     /**
@@ -184,33 +181,6 @@ class Simple_Auth0
         return !empty($this->options['enable_auth0_login']);
     }
 
-    /**
-     * Maybe reinitialize auth hooks when options are updated
-     *
-     * @param array $old_value Old option value.
-     * @param array $new_value New option value.
-     */
-    public function maybe_reinit_auth_hooks($old_value, $new_value)
-    {
-        $old_enabled = !empty($old_value['enable_auth0_login']);
-        $new_enabled = !empty($new_value['enable_auth0_login']);
-        
-        // If the enabled state changed, we need to reinitialize hooks
-        if ($old_enabled !== $new_enabled) {
-            // Remove existing auth hooks
-            remove_action('login_init', [$this, 'redirect_to_auth0']);
-            remove_filter('authenticate', [$this, 'authenticate_user'], 20);
-            remove_filter('login_url', [$this, 'modify_login_url'], 10);
-            
-            // Reload options
-            $this->load_options();
-            
-            // Reinitialize auth hooks if enabled
-            if ($new_enabled) {
-                $this->init_auth_hooks();
-            }
-        }
-    }
 
     /**
      * Get plugin options
@@ -327,7 +297,7 @@ class Simple_Auth0
         if (!$this->is_auth0_login_enabled()) {
             return;
         }
-        
+
         // This will be implemented in the OAuth handler
     }
 
@@ -345,7 +315,7 @@ class Simple_Auth0
         if (!$this->is_auth0_login_enabled()) {
             return $user;
         }
-        
+
         // This will be implemented in the OAuth handler
         return $user;
     }
@@ -363,7 +333,7 @@ class Simple_Auth0
         if (!$this->is_auth0_login_enabled()) {
             return $login_url;
         }
-        
+
         // This will be implemented in the OAuth handler
         return $login_url;
     }
