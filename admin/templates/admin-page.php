@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Admin page template
  * 
@@ -18,7 +19,7 @@ if (!defined('ABSPATH')) {
         <h1><?php echo esc_html($page_title); ?></h1>
         <p><?php _e('Secure authentication with Auth0 integration for your WordPress site', 'simple-auth0'); ?></p>
     </div>
-    
+
     <div class="simple-auth0-status-card">
         <h3><?php _e('Connection Status', 'simple-auth0'); ?></h3>
         <div style="display: flex; align-items: center; flex-wrap: wrap;">
@@ -31,7 +32,7 @@ if (!defined('ABSPATH')) {
             </button>
         </div>
     </div>
-    
+
     <div class="simple-auth0-tabs">
         <nav class="nav-tab-wrapper wp-clearfix">
             <?php foreach ($tabs as $tab_key => $tab_label) : ?>
@@ -41,7 +42,7 @@ if (!defined('ABSPATH')) {
                 </a>
             <?php endforeach; ?>
         </nav>
-        
+
         <div class="tab-content">
             <?php echo $tab_content; ?>
         </div>

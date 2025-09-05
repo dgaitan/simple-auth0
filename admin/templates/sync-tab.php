@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Sync tab template
  */
@@ -11,7 +12,7 @@ if (!defined('ABSPATH')) {
 <div class="simple-auth0-card sync">
     <h2><?php _e('User Sync', 'simple-auth0'); ?></h2>
     <p><?php _e('Export your WordPress users to Auth0-compatible format for easy migration.', 'simple-auth0'); ?></p>
-    
+
     <div class="sync-actions">
         <button type="button" class="sync-btn secondary" id="preview-export">
             <?php _e('Preview Export', 'simple-auth0'); ?>
@@ -20,14 +21,14 @@ if (!defined('ABSPATH')) {
             <?php _e('Download Export', 'simple-auth0'); ?>
         </button>
     </div>
-    
+
     <div id="export-preview" style="display: none;">
         <h3><?php _e('Export Preview', 'simple-auth0'); ?></h3>
         <div class="export-preview">
             <pre id="preview-content"></pre>
         </div>
     </div>
-    
+
     <div class="help-section">
         <h3><?php _e('Export Information', 'simple-auth0'); ?></h3>
         <ul>
@@ -37,7 +38,7 @@ if (!defined('ABSPATH')) {
             <li><?php _e('The export follows Auth0\'s bulk import JSON format', 'simple-auth0'); ?></li>
         </ul>
     </div>
-    
+
     <div class="help-section">
         <h3><?php _e('Import Instructions', 'simple-auth0'); ?></h3>
         <ol>

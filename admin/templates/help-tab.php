@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Help tab template
  */
@@ -10,7 +11,7 @@ if (!defined('ABSPATH')) {
 
 <div class="simple-auth0-card help">
     <h2><?php _e('Auth0 Setup Guide', 'simple-auth0'); ?></h2>
-    
+
     <div class="help-section">
         <h3><?php _e('1. Auth0 Application Configuration', 'simple-auth0'); ?></h3>
         <p><?php _e('In your Auth0 Dashboard, configure your application with these settings:', 'simple-auth0'); ?></p>
@@ -21,7 +22,7 @@ if (!defined('ABSPATH')) {
             <li><strong><?php _e('Application Type:', 'simple-auth0'); ?></strong> <?php _e('Regular Web Application', 'simple-auth0'); ?></li>
         </ul>
     </div>
-    
+
     <div class="help-section">
         <h3><?php _e('2. Plugin Configuration', 'simple-auth0'); ?></h3>
         <ol>
@@ -32,12 +33,12 @@ if (!defined('ABSPATH')) {
             <li><?php _e('Enable Auth0 Login when ready', 'simple-auth0'); ?></li>
         </ol>
     </div>
-    
+
     <div class="help-section">
         <h3><?php _e('3. User Migration', 'simple-auth0'); ?></h3>
         <p><?php _e('Use the Sync tab to export your WordPress users for import into Auth0. The export will be in Auth0\'s bulk import format.', 'simple-auth0'); ?></p>
     </div>
-    
+
     <div class="help-section">
         <h3><?php _e('4. Troubleshooting', 'simple-auth0'); ?></h3>
         <ul>
@@ -49,7 +50,7 @@ if (!defined('ABSPATH')) {
             <li><?php _e('Verify that your Auth0 application is not in a locked state', 'simple-auth0'); ?></li>
         </ul>
     </div>
-    
+
     <div class="help-section">
         <h3><?php _e('5. Security Considerations', 'simple-auth0'); ?></h3>
         <ul>
@@ -59,7 +60,7 @@ if (!defined('ABSPATH')) {
             <li><?php _e('Monitor your Auth0 logs for suspicious activity', 'simple-auth0'); ?></li>
         </ul>
     </div>
-    
+
     <div class="help-section">
         <h3><?php _e('6. Support', 'simple-auth0'); ?></h3>
         <p><?php _e('For additional help:', 'simple-auth0'); ?></p>
