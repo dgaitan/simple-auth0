@@ -73,6 +73,7 @@
             $.ajax({
                 url: ajaxurl,
                 type: 'POST',
+                timeout: 30000, // 30 second timeout
                 data: {
                     action: 'simple_auth0_test_connection',
                     nonce: simple_auth0_admin.nonce
@@ -88,7 +89,11 @@
                 },
                 error: function(xhr, status, error) {
                     SimpleAuth0Admin.updateStatusBadge('not-connected', 'Connection failed');
-                    SimpleAuth0Admin.showStatusMessage('error', 'Network error: ' + error);
+                    if (status === 'timeout') {
+                        SimpleAuth0Admin.showStatusMessage('error', 'Connection test timed out. Please try again.');
+                    } else {
+                        SimpleAuth0Admin.showStatusMessage('error', 'Network error: ' + error);
+                    }
                 },
                 complete: function() {
                     $button.prop('disabled', false).text('Test Connection');
@@ -251,9 +256,11 @@
                 return true; // Optional field
             }
             
-            var pattern = /^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]*\.(auth0\.com|us\.auth0\.com|eu\.auth0\.com|au\.auth0\.com)$/;
+            // More flexible pattern to handle various Auth0 domain formats
+            var pattern = /^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]*\.(auth0\.com|us\.auth0\.com|eu\.auth0\.com|au\.auth0\.com|dev\.auth0\.com)$/;
             
-            if (!pattern.test(domain)) {
+            // Also allow domains that just end with .auth0.com (for custom domains)
+            if (!pattern.test(domain) && !/^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]*\.auth0\.com$/.test(domain)) {
                 this.showFieldError($field, 'Please enter a valid Auth0 domain (e.g., your-tenant.auth0.com)');
                 return false;
             }
