@@ -33,19 +33,12 @@ class Admin
      */
     private $tabs = [];
 
-    /**
-     * Plugin instance
-     *
-     * @var Simple_Auth0
-     */
-    private $plugin;
 
     /**
      * Constructor
      */
     public function __construct()
     {
-        $this->plugin = Simple_Auth0::get_instance();
         $this->init_tabs();
         add_action('admin_menu', [$this, 'add_admin_menu']);
         add_action('admin_init', [$this, 'admin_init']);
@@ -562,7 +555,8 @@ class Admin
             wp_die(__('Insufficient permissions', 'simple-auth0'));
         }
 
-        $options = $this->plugin->get_options();
+        $plugin = Simple_Auth0::get_instance();
+        $options = $plugin->get_options();
 
         if (empty($options['domain']) || empty($options['client_id'])) {
             wp_send_json_error([

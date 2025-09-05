@@ -30,19 +30,12 @@ class OAuth_Handler
      */
     private $auth0;
 
-    /**
-     * Plugin instance
-     *
-     * @var Simple_Auth0
-     */
-    private $plugin;
 
     /**
      * Constructor
      */
     public function __construct()
     {
-        $this->plugin = Simple_Auth0::get_instance();
         $this->init_auth0();
     }
 
@@ -51,7 +44,8 @@ class OAuth_Handler
      */
     private function init_auth0()
     {
-        $options = $this->plugin->get_options();
+        $plugin = Simple_Auth0::get_instance();
+        $options = $plugin->get_options();
 
         if (empty($options['domain']) || empty($options['client_id'])) {
             return;
@@ -213,7 +207,8 @@ class OAuth_Handler
         wp_logout();
 
         // Get logout URL from Auth0
-        $options = $this->plugin->get_options();
+        $plugin = Simple_Auth0::get_instance();
+        $options = $plugin->get_options();
         $logout_url = $options['logout_redirect_uri'] ?: home_url();
 
         if ($this->auth0) {
