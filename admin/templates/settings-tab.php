@@ -60,15 +60,22 @@ if (!defined('ABSPATH')) {
                     <label for="simple_auth0_client_secret"><?php _e('Client Secret', 'simple-auth0'); ?></label>
                 </th>
                 <td>
-                    <input type="password"
-                        id="simple_auth0_client_secret"
-                        name="simple_auth0_options[client_secret]"
-                        value=""
-                        class="regular-text"
-                        placeholder="<?php echo !empty($options['client_secret']) ? '••••••••••••••••' : ''; ?>" />
-                    <p class="description">
-                        <?php _e('Your Auth0 application Client Secret. Leave blank to keep current value.', 'simple-auth0'); ?>
-                    </p>
+                    <input type="password" 
+                           id="simple_auth0_client_secret" 
+                           name="simple_auth0_options[client_secret]" 
+                           value="" 
+                           class="regular-text" 
+                           placeholder="<?php echo !empty($options['client_secret']) ? '••••••••••••••••' : ''; ?>" 
+                           autocomplete="new-password" />
+                    <?php if (!empty($options['client_secret'])) : ?>
+                        <p class="description">
+                            <span style="color: #28a745;">✓</span> <?php _e('Client Secret is configured. Leave blank to keep current value.', 'simple-auth0'); ?>
+                        </p>
+                    <?php else : ?>
+                        <p class="description">
+                            <?php _e('Your Auth0 application Client Secret. This will be encrypted and stored securely.', 'simple-auth0'); ?>
+                        </p>
+                    <?php endif; ?>
                 </td>
             </tr>
 

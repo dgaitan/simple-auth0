@@ -103,7 +103,7 @@ class Simple_Auth0
     }
 
     /**
-     * Sanitize options
+     * Sanitize options with enhanced validation
      *
      * @param array $input Input options
      * @return array Sanitized options
@@ -111,37 +111,98 @@ class Simple_Auth0
     public function sanitize_options($input)
     {
         $sanitized = [];
+        $errors = [];
 
-        // Domain
+        // Domain validation
         if (!empty($input['domain'])) {
-            $sanitized['domain'] = sanitize_text_field($input['domain']);
-        }
-
-        // Client ID
-        if (!empty($input['client_id'])) {
-            $sanitized['client_id'] = sanitize_text_field($input['client_id']);
-        }
-
-        // Client Secret (only update if not empty)
-        if (!empty($input['client_secret'])) {
-            $sanitized['client_secret'] = sanitize_text_field($input['client_secret']);
+            $domain = sanitize_text_field($input['domain']);
+            if ($this->validate_auth0_domain($domain)) {
+                $sanitized['domain'] = $domain;
+            } else {
+                add_settings_error(
+                    'simple_auth0_options',
+                    'invalid_domain',
+                    __('Please enter a valid Auth0 domain (e.g., your-tenant.auth0.com)', 'simple-auth0')
+                );
+                $sanitized['domain'] = $this->options['domain'] ?? '';
+            }
         } else {
+            $sanitized['domain'] = $this->options['domain'] ?? '';
+        }
+
+        // Client ID validation
+        if (!empty($input['client_id'])) {
+            $client_id = sanitize_text_field($input['client_id']);
+            if (strlen($client_id) >= 10) { // Basic length check
+                $sanitized['client_id'] = $client_id;
+            } else {
+                add_settings_error(
+                    'simple_auth0_options',
+                    'invalid_client_id',
+                    __('Client ID must be at least 10 characters long', 'simple-auth0')
+                );
+                $sanitized['client_id'] = $this->options['client_id'] ?? '';
+            }
+        } else {
+            $sanitized['client_id'] = $this->options['client_id'] ?? '';
+        }
+
+        // Client Secret (only update if not empty, with security)
+        if (!empty($input['client_secret'])) {
+            $client_secret = sanitize_text_field($input['client_secret']);
+            if (strlen($client_secret) >= 20) { // Basic length check
+                // Encrypt the client secret if possible
+                $sanitized['client_secret'] = $this->encrypt_secret($client_secret);
+            } else {
+                add_settings_error(
+                    'simple_auth0_options',
+                    'invalid_client_secret',
+                    __('Client Secret must be at least 20 characters long', 'simple-auth0')
+                );
+                $sanitized['client_secret'] = $this->options['client_secret'] ?? '';
+            }
+        } else {
+            // Keep existing secret if field is empty
             $sanitized['client_secret'] = $this->options['client_secret'] ?? '';
         }
 
-        // Redirect URI
-        $sanitized['redirect_uri'] = !empty($input['redirect_uri'])
-            ? esc_url_raw($input['redirect_uri'])
-            : home_url('/wp-json/simple-auth0/v1/callback');
+        // Redirect URI validation
+        if (!empty($input['redirect_uri'])) {
+            $redirect_uri = esc_url_raw($input['redirect_uri']);
+            if ($this->validate_redirect_uri($redirect_uri)) {
+                $sanitized['redirect_uri'] = $redirect_uri;
+            } else {
+                add_settings_error(
+                    'simple_auth0_options',
+                    'invalid_redirect_uri',
+                    __('Redirect URI must be a valid URL on your current site', 'simple-auth0')
+                );
+                $sanitized['redirect_uri'] = $this->options['redirect_uri'] ?? home_url('/wp-json/simple-auth0/v1/callback');
+            }
+        } else {
+            $sanitized['redirect_uri'] = home_url('/wp-json/simple-auth0/v1/callback');
+        }
 
-        // Scopes
-        $sanitized['scopes'] = !empty($input['scopes'])
-            ? sanitize_text_field($input['scopes'])
-            : 'openid profile email';
+        // Scopes validation
+        if (!empty($input['scopes'])) {
+            $scopes = sanitize_text_field($input['scopes']);
+            if ($this->validate_scopes($scopes)) {
+                $sanitized['scopes'] = $scopes;
+            } else {
+                add_settings_error(
+                    'simple_auth0_options',
+                    'invalid_scopes',
+                    __('Scopes must be space-separated and contain only valid OAuth scopes', 'simple-auth0')
+                );
+                $sanitized['scopes'] = $this->options['scopes'] ?? 'openid profile email';
+            }
+        } else {
+            $sanitized['scopes'] = 'openid profile email';
+        }
 
         // Audience (optional)
-        $sanitized['audience'] = !empty($input['audience'])
-            ? sanitize_text_field($input['audience'])
+        $sanitized['audience'] = !empty($input['audience']) 
+            ? sanitize_text_field($input['audience']) 
             : '';
 
         // Enable Auth0 Login
@@ -151,15 +212,146 @@ class Simple_Auth0
         $sanitized['auto_sync_users'] = !empty($input['auto_sync_users']);
 
         // Export hash algorithm
-        $sanitized['export_hash_algorithm'] = !empty($input['export_hash_algorithm'])
-            ? sanitize_text_field($input['export_hash_algorithm'])
+        $sanitized['export_hash_algorithm'] = !empty($input['export_hash_algorithm']) 
+            ? sanitize_text_field($input['export_hash_algorithm']) 
             : '';
 
         // Status tracking
         $sanitized['status_last_checked'] = $this->options['status_last_checked'] ?? 0;
         $sanitized['status_ok'] = $this->options['status_ok'] ?? false;
 
+        // Test connection if domain and client_id are provided
+        if (!empty($sanitized['domain']) && !empty($sanitized['client_id'])) {
+            $this->test_connection_on_save($sanitized);
+        }
+
         return $sanitized;
+    }
+
+    /**
+     * Validate Auth0 domain format
+     *
+     * @param string $domain Domain to validate
+     * @return bool
+     */
+    private function validate_auth0_domain($domain)
+    {
+        // Auth0 domain pattern: tenant.auth0.com or tenant.us.auth0.com, etc.
+        $pattern = '/^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]*\.(auth0\.com|us\.auth0\.com|eu\.auth0\.com|au\.auth0\.com)$/';
+        return preg_match($pattern, $domain) === 1;
+    }
+
+    /**
+     * Validate redirect URI
+     *
+     * @param string $uri URI to validate
+     * @return bool
+     */
+    private function validate_redirect_uri($uri)
+    {
+        // Must be a valid URL
+        if (!filter_var($uri, FILTER_VALIDATE_URL)) {
+            return false;
+        }
+
+        // Must be on the same domain as the current site
+        $current_domain = parse_url(home_url(), PHP_URL_HOST);
+        $uri_domain = parse_url($uri, PHP_URL_HOST);
+        
+        return $current_domain === $uri_domain;
+    }
+
+    /**
+     * Validate OAuth scopes
+     *
+     * @param string $scopes Scopes to validate
+     * @return bool
+     */
+    private function validate_scopes($scopes)
+    {
+        $valid_scopes = [
+            'openid', 'profile', 'email', 'address', 'phone', 'offline_access',
+            'read:current_user', 'update:current_user_metadata'
+        ];
+        
+        $scope_array = explode(' ', trim($scopes));
+        
+        foreach ($scope_array as $scope) {
+            if (!in_array($scope, $valid_scopes)) {
+                return false;
+            }
+        }
+        
+        return true;
+    }
+
+    /**
+     * Encrypt client secret
+     *
+     * @param string $secret Secret to encrypt
+     * @return string Encrypted secret
+     */
+    private function encrypt_secret($secret)
+    {
+        // Use WordPress salts for encryption
+        $key = wp_salt('AUTH_KEY') . wp_salt('SECURE_AUTH_KEY');
+        
+        // Simple encryption using WordPress functions
+        if (function_exists('openssl_encrypt')) {
+            $iv = wp_generate_password(16, false);
+            $encrypted = openssl_encrypt($secret, 'AES-256-CBC', $key, 0, $iv);
+            return base64_encode($iv . $encrypted);
+        }
+        
+        // Fallback to WordPress hash
+        return wp_hash($secret . $key);
+    }
+
+    /**
+     * Decrypt client secret
+     *
+     * @param string $encrypted_secret Encrypted secret
+     * @return string Decrypted secret
+     */
+    private function decrypt_secret($encrypted_secret)
+    {
+        $key = wp_salt('AUTH_KEY') . wp_salt('SECURE_AUTH_KEY');
+        
+        if (function_exists('openssl_decrypt')) {
+            $data = base64_decode($encrypted_secret);
+            $iv = substr($data, 0, 16);
+            $encrypted = substr($data, 16);
+            return openssl_decrypt($encrypted, 'AES-256-CBC', $key, 0, $iv);
+        }
+        
+        // If we can't decrypt, return empty (user will need to re-enter)
+        return '';
+    }
+
+    /**
+     * Test connection on save
+     *
+     * @param array $options Options to test
+     */
+    private function test_connection_on_save($options)
+    {
+        $result = $this->test_auth0_connection($options);
+        
+        if ($result['success']) {
+            add_settings_error(
+                'simple_auth0_options',
+                'connection_success',
+                __('Settings saved and connection test successful!', 'simple-auth0'),
+                'updated'
+            );
+        } else {
+            add_settings_error(
+                'simple_auth0_options',
+                'connection_failed',
+                sprintf(__('Settings saved, but connection test failed: %s', 'simple-auth0'), $result['message']),
+                'error'
+            );
+        }
     }
 
     /**
@@ -298,14 +490,14 @@ class Simple_Auth0
             return ['success' => false, 'message' => __('Client ID is required', 'simple-auth0')];
         }
 
-        // Validate domain format
-        if (!preg_match('/^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]*\.auth0\.com$/', $options['domain'])) {
-            return ['success' => false, 'message' => __('Invalid Auth0 domain format', 'simple-auth0')];
+        // Validate domain format using our validation method
+        if (!$this->validate_auth0_domain($options['domain'])) {
+            return ['success' => false, 'message' => __('Invalid Auth0 domain format. Please use format like your-tenant.auth0.com', 'simple-auth0')];
         }
 
         // Test connection by fetching well-known configuration
         $well_known_url = 'https://' . $options['domain'] . '/.well-known/openid_configuration';
-
+        
         $response = wp_remote_get($well_known_url, [
             'timeout' => 10,
             'headers' => [
@@ -314,19 +506,41 @@ class Simple_Auth0
         ]);
 
         if (is_wp_error($response)) {
-            return ['success' => false, 'message' => __('Network error: ' . $response->get_error_message(), 'simple-auth0')];
+            $error_message = $response->get_error_message();
+            if (strpos($error_message, 'SSL') !== false) {
+                return ['success' => false, 'message' => __('SSL connection error. Please check your server\'s SSL configuration.', 'simple-auth0')];
+            } elseif (strpos($error_message, 'timeout') !== false) {
+                return ['success' => false, 'message' => __('Connection timeout. Please check your internet connection and try again.', 'simple-auth0')];
+            } else {
+                return ['success' => false, 'message' => sprintf(__('Network error: %s', 'simple-auth0'), $error_message)];
+            }
         }
 
         $response_code = wp_remote_retrieve_response_code($response);
         if ($response_code !== 200) {
-            return ['success' => false, 'message' => sprintf(__('Auth0 service error (HTTP %d)', 'simple-auth0'), $response_code)];
+            switch ($response_code) {
+                case 404:
+                    return ['success' => false, 'message' => __('Auth0 domain not found. Please check your domain spelling.', 'simple-auth0')];
+                case 403:
+                    return ['success' => false, 'message' => __('Access denied. Please check if your Auth0 tenant is active.', 'simple-auth0')];
+                case 500:
+                    return ['success' => false, 'message' => __('Auth0 service temporarily unavailable. Please try again later.', 'simple-auth0')];
+                default:
+                    return ['success' => false, 'message' => sprintf(__('Auth0 service error (HTTP %d). Please try again later.', 'simple-auth0'), $response_code)];
+            }
         }
 
         $body = wp_remote_retrieve_body($response);
         $config = json_decode($body, true);
 
         if (!$config || !isset($config['issuer'])) {
-            return ['success' => false, 'message' => __('Invalid Auth0 configuration response', 'simple-auth0')];
+            return ['success' => false, 'message' => __('Invalid response from Auth0. Please check your domain and try again.', 'simple-auth0')];
+        }
+
+        // Verify the issuer matches the domain
+        $expected_issuer = 'https://' . $options['domain'] . '/';
+        if ($config['issuer'] !== $expected_issuer) {
+            return ['success' => false, 'message' => __('Domain mismatch in Auth0 configuration. Please verify your domain.', 'simple-auth0')];
         }
 
         // Update status
@@ -334,7 +548,7 @@ class Simple_Auth0
         $this->options['status_ok'] = true;
         update_option('simple_auth0_options', $this->options);
 
-        return ['success' => true, 'message' => __('Successfully connected to Auth0', 'simple-auth0')];
+        return ['success' => true, 'message' => __('Successfully connected to Auth0! Your configuration is valid.', 'simple-auth0')];
     }
 
     /**
