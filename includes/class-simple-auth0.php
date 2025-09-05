@@ -64,6 +64,7 @@ class Simple_Auth0
         if (is_admin()) {
             add_action('admin_menu', [$this, 'add_admin_menu']);
             add_action('admin_init', [$this, 'admin_init']);
+            add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_scripts']);
         }
     }
 
@@ -76,6 +77,9 @@ class Simple_Auth0
         register_setting('simple_auth0_options', 'simple_auth0_options', [
             'sanitize_callback' => [$this, 'sanitize_options']
         ]);
+
+        // Add AJAX handlers for connection testing
+        add_action('wp_ajax_simple_auth0_test_connection', [$this, 'ajax_test_connection']);
     }
 
     /**
@@ -120,6 +124,220 @@ class Simple_Auth0
         $sanitized['status_ok'] = $this->options['status_ok'] ?? false;
 
         return $sanitized;
+    }
+
+    /**
+     * Enqueue admin scripts and styles
+     */
+    public function enqueue_admin_scripts($hook)
+    {
+        // Only load on our admin page
+        if ('settings_page_simple-auth0' !== $hook) {
+            return;
+        }
+
+        // Add inline CSS for status badge
+        $css = '
+        .simple-auth0-status {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f1f1f1;
+            border: 1px solid #ccd0d4;
+            border-radius: 4px;
+        }
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+        .status-badge.connected {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status-badge.not-connected {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status-badge.checking {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 8px;
+            display: inline-block;
+        }
+        .status-badge.connected .status-indicator {
+            background: #28a745;
+        }
+        .status-badge.not-connected .status-indicator {
+            background: #dc3545;
+        }
+        .status-badge.checking .status-indicator {
+            background: #ffc107;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .auth0-toggle-disabled {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+        ';
+
+        wp_add_inline_style('wp-admin', $css);
+
+        // Add inline JavaScript for connection testing
+        $js = '
+        jQuery(document).ready(function($) {
+            // Test connection on page load
+            testConnection();
+            
+            // Test connection button click
+            $("#test-connection").on("click", function() {
+                testConnection();
+            });
+            
+            function testConnection() {
+                var $status = $("#connection-status");
+                var $button = $("#test-connection");
+                var $toggle = $("#simple_auth0_enable_login");
+                
+                $status.removeClass("connected not-connected").addClass("checking");
+                $status.find(".status-text").text("' . esc_js(__('Testing connection...', 'simple-auth0')) . '");
+                $button.prop("disabled", true);
+                
+                $.post(ajaxurl, {
+                    action: "simple_auth0_test_connection",
+                    nonce: "' . wp_create_nonce('simple_auth0_test_connection') . '"
+                }, function(response) {
+                    if (response.success) {
+                        $status.removeClass("checking").addClass("connected");
+                        $status.find(".status-text").text(response.data.message);
+                        $toggle.prop("disabled", false).closest("tr").removeClass("auth0-toggle-disabled");
+                    } else {
+                        $status.removeClass("checking").addClass("not-connected");
+                        $status.find(".status-text").text(response.data.message || "' . esc_js(__('Connection failed', 'simple-auth0')) . '");
+                        $toggle.prop("disabled", true).closest("tr").addClass("auth0-toggle-disabled");
+                    }
+                    $button.prop("disabled", false);
+                }).fail(function() {
+                    $status.removeClass("checking").addClass("not-connected");
+                    $status.find(".status-text").text("' . esc_js(__('Connection test failed', 'simple-auth0')) . '");
+                    $button.prop("disabled", false);
+                });
+            }
+        });
+        ';
+
+        wp_add_inline_script('jquery', $js);
+    }
+
+    /**
+     * AJAX handler for testing Auth0 connection
+     */
+    public function ajax_test_connection()
+    {
+        // Verify nonce
+        if (!wp_verify_nonce($_POST['nonce'] ?? '', 'simple_auth0_test_connection')) {
+            wp_send_json_error(['message' => __('Security check failed', 'simple-auth0')]);
+        }
+
+        // Check user capabilities
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(['message' => __('Insufficient permissions', 'simple-auth0')]);
+        }
+
+        // Get current options
+        $options = $this->get_options();
+
+        // Check if required fields are filled
+        if (empty($options['domain']) || empty($options['client_id'])) {
+            wp_send_json_error(['message' => __('Auth0 Domain and Client ID are required', 'simple-auth0')]);
+        }
+
+        // Test connection by fetching Auth0's well-known configuration
+        $test_result = $this->test_auth0_connection($options);
+
+        if ($test_result['success']) {
+            wp_send_json_success(['message' => $test_result['message']]);
+        } else {
+            wp_send_json_error(['message' => $test_result['message']]);
+        }
+    }
+
+    /**
+     * Test Auth0 connection
+     *
+     * @param array $options Plugin options.
+     * @return array Test result.
+     */
+    private function test_auth0_connection($options)
+    {
+        $domain = $options['domain'];
+
+        // Ensure domain has proper format
+        if (!preg_match('/^[a-zA-Z0-9][a-zA-Z0-9-]*[a-zA-Z0-9]*\.auth0\.com$/', $domain)) {
+            return [
+                'success' => false,
+                'message' => __('Invalid Auth0 domain format', 'simple-auth0')
+            ];
+        }
+
+        // Test by fetching the well-known configuration
+        $well_known_url = "https://{$domain}/.well-known/openid_configuration";
+
+        $response = wp_remote_get($well_known_url, [
+            'timeout' => 10,
+            'headers' => [
+                'User-Agent' => 'Simple Auth0 WordPress Plugin'
+            ]
+        ]);
+
+        if (is_wp_error($response)) {
+            return [
+                'success' => false,
+                'message' => sprintf(__('Cannot reach Auth0: %s', 'simple-auth0'), $response->get_error_message())
+            ];
+        }
+
+        $response_code = wp_remote_retrieve_response_code($response);
+        if ($response_code !== 200) {
+            return [
+                'success' => false,
+                'message' => sprintf(__('Auth0 returned error code: %d', 'simple-auth0'), $response_code)
+            ];
+        }
+
+        $body = wp_remote_retrieve_body($response);
+        $config = json_decode($body, true);
+
+        if (!$config || !isset($config['issuer'])) {
+            return [
+                'success' => false,
+                'message' => __('Invalid Auth0 configuration response', 'simple-auth0')
+            ];
+        }
+
+        // Update status in options
+        $this->options['status_last_checked'] = time();
+        $this->options['status_ok'] = true;
+        update_option('simple_auth0_options', $this->options);
+
+        return [
+            'success' => true,
+            'message' => __('Connected to Auth0 successfully', 'simple-auth0')
+        ];
     }
 
     /**
@@ -193,6 +411,16 @@ class Simple_Auth0
 ?>
         <div class="wrap">
             <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
+
+            <div class="simple-auth0-status">
+                <span class="status-badge" id="connection-status">
+                    <span class="status-indicator"></span>
+                    <span class="status-text"><?php _e('Checking connection...', 'simple-auth0'); ?></span>
+                </span>
+                <button type="button" class="button button-secondary" id="test-connection" style="margin-left: 10px;">
+                    <?php _e('Test Connection', 'simple-auth0'); ?>
+                </button>
+            </div>
 
             <nav class="nav-tab-wrapper wp-clearfix">
                 <?php foreach ($tabs as $tab_key => $tab_label) : ?>
@@ -274,17 +502,24 @@ class Simple_Auth0
                             <p class="description"><?php _e('Your Auth0 application Client Secret (leave blank to keep current)', 'simple-auth0'); ?></p>
                         </td>
                     </tr>
-                    <tr>
+                    <tr class="auth0-toggle-row">
                         <th scope="row">
                             <label for="simple_auth0_enable_login"><?php _e('Enable Auth0 Login', 'simple-auth0'); ?></label>
                         </th>
                         <td>
                             <label>
                                 <input type="checkbox" id="simple_auth0_enable_login" name="simple_auth0_options[enable_auth0_login]"
-                                    value="1" <?php checked(!empty($this->options['enable_auth0_login'])); ?> />
+                                    value="1" <?php checked(!empty($this->options['enable_auth0_login'])); ?>
+                                    <?php echo (empty($this->options['domain']) || empty($this->options['client_id'])) ? 'disabled' : ''; ?> />
                                 <?php _e('Replace WordPress login with Auth0', 'simple-auth0'); ?>
                             </label>
-                            <p class="description"><?php _e('⚠️ Only enable this after configuring Auth0 settings above', 'simple-auth0'); ?></p>
+                            <p class="description">
+                                <?php if (empty($this->options['domain']) || empty($this->options['client_id'])) : ?>
+                                    <span style="color: #d63638;">⚠️ <?php _e('Configure Auth0 Domain and Client ID above to enable this option', 'simple-auth0'); ?></span>
+                                <?php else : ?>
+                                    <span style="color: #00a32a;">✅ <?php _e('Auth0 credentials configured. You can enable Auth0 login.', 'simple-auth0'); ?></span>
+                                <?php endif; ?>
+                            </p>
                         </td>
                     </tr>
                 </table>
